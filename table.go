@@ -10,6 +10,19 @@ import (
 	"github.com/imdario/mergo"
 )
 
+const (
+	AttributeTypeB    string = "B"
+	AttributeTypeBOOL string = "BOOL"
+	AttributeTypeBS   string = "BS"
+	AttributeTypeL    string = "L"
+	AttributeTypeM    string = "M"
+	AttributeTypeN    string = "N"
+	AttributeTypeNS   string = "NS"
+	AttributeTypeNULL string = "NULL"
+	AttributeTypeS    string = "S"
+	AttributeTypeSS   string = "SS"
+)
+
 type Table struct {
 	definition  *dynamodb.CreateTableInput
 	session     *dynamodb.DynamoDB
@@ -84,39 +97,59 @@ func getAttributeDefinitionMap(t reflect.Type) map[string]*dynamodb.AttributeDef
 			continue
 		}
 
-		switch t.Field(i).Type.Kind() {
-		case reflect.Int:
-			attributeType = "N"
-			break
-		case reflect.String:
-			attributeType = "S"
-			break
-		case reflect.Bool:
-			attributeType = "BOOL"
-			break
-		case reflect.Slice:
-			attributeType = "L"
-			break
-		case reflect.Map:
-			attributeType = "M"
-			break
-		case reflect.Struct:
-			switch t.Field(i).Type {
-			case reflect.TypeOf(time.Now()):
-				attributeType = "S"
-				break
-			default:
-				if err := mergo.MapWithOverwrite(&adm, getAttributeDefinitionMap(t.Field(i).Type)); err != nil {
-					panic(err)
-				}
-				// Continue here to avoid having "-" fields inherited form nested struct field name
-				continue
+		if attributeTypeTagValue, ok := t.Field(i).Tag.Lookup("dynamodbat"); ok {
+			switch attributeTypeTagValue {
+			case
+				AttributeTypeB,
+				AttributeTypeBOOL,
+				AttributeTypeBS,
+				AttributeTypeL,
+				AttributeTypeM,
+				AttributeTypeN,
+				AttributeTypeNS,
+				AttributeTypeNULL,
+				AttributeTypeS,
+				AttributeTypeSS:
+				attributeType = attributeTypeTagValue
 				break
 			}
-			break
-		default:
-			attributeType = "S"
-			break
+		}
+
+		if attributeType == "" {
+			switch t.Field(i).Type.Kind() {
+			case reflect.Int:
+				attributeType = AttributeTypeN
+				break
+			case reflect.String:
+				attributeType = AttributeTypeS
+				break
+			case reflect.Bool:
+				attributeType = AttributeTypeBOOL
+				break
+			case reflect.Slice:
+				attributeType = AttributeTypeL
+				break
+			case reflect.Map:
+				attributeType = AttributeTypeM
+				break
+			case reflect.Struct:
+				switch t.Field(i).Type {
+				case reflect.TypeOf(time.Now()):
+					attributeType = AttributeTypeS
+					break
+				default:
+					if err := mergo.MapWithOverwrite(&adm, getAttributeDefinitionMap(t.Field(i).Type)); err != nil {
+						panic(err)
+					}
+					// Continue here to avoid having "-" fields inherited form nested struct field name
+					continue
+					break
+				}
+				break
+			default:
+				attributeType = AttributeTypeS
+				break
+			}
 		}
 
 		// using field name here to avoid duplicates,

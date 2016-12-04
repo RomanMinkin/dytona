@@ -168,3 +168,26 @@ func TestAttributeDefinitionsOverwrite(t *testing.T) {
 		AttributeType: aws.String("N"),
 	})
 }
+
+func TestAttributeDefinitionsForCustomDynamodbat(t *testing.T) {
+	type User struct {
+		Item        `json:"-" dynamodbav:"-"`
+		SliceInt    []int    `json:"slice_int" dynamodbav:"slice_int" dynamodbat:"NS"`
+		SliceString []string `json:"slice_string" dynamodbav:"slice_string" dynamodbat:"SS"`
+	}
+
+	tbl := NewTable("users", func() Itemer {
+		return &User{}
+	})
+
+	ad := tbl.attributeDefinitions()
+	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
+		AttributeName: aws.String("slice_int"),
+		AttributeType: aws.String("NS"),
+	})
+	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
+		AttributeName: aws.String("slice_string"),
+		AttributeType: aws.String("SS"),
+	})
+	assert.Len(t, ad, 6, "AttributeDefinitions lenght does should match")
+}
