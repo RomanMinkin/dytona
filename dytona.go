@@ -46,19 +46,16 @@ func (d *Dytona) GetSession() *dynamodb.DynamoDB {
 	return d.session
 }
 
-func (d *Dytona) RegisterTable(tableName string, newItem func() Itemer) *Table {
-	item := newItem()
+func (d *Dytona) RegisterTable(tableName string, newItemFunc func() Itemer) *Table {
+	item := newItemFunc()
 	if item == nil {
 		panic("dytona.SetTable: item can not be nil")
 	}
 
 	tableName = strings.ToLower(tableName)
 
-	t := &Table{
-		name:    strings.ToLower(tableName),
-		session: d.session,
-		newItem: newItem,
-	}
+	t := NewTable(strings.ToLower(tableName), newItemFunc).
+		WithSession(d.session)
 
 	d.registry[tableName] = t
 	return t
