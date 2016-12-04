@@ -1,0 +1,4 @@
+.bin
+
+# ingnore only directories and keep vendor/vendor.json
+vendor/*/
