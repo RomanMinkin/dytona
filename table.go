@@ -2,6 +2,7 @@ package dytona
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,14 +23,17 @@ const (
 	AttributeTypeS    string = "S"
 	AttributeTypeSS   string = "SS"
 
-	KeyTypeHASH  string = "HASH"
-	KeyTypeRANGE string = "RANGE"
+	KeyTypeHASH               string = "HASH"
+	KeyTypeRANGE              string = "RANGE"
+	KeyProjectionTypeKEYSONLY string = "KEYS_ONLY"
+	KeyProjectionTypeINCLUDE  string = "INCLUDE"
+	KeyProjectionTypeALL      string = "ALL"
 
-	TagAttributeValue         string = "dynamodbav"
-	TagAttributeType          string = "dynamodbat"
-	TagPrimaryKey             string = "dynamodbpk"
-	TagLocalSecondaryIndexes  string = "dynamodblsi"
-	TagGlobalSecondaryIndexes string = "dynamodbgsi"
+	TagAttributeValue       string = "dynamodbav"
+	TagAttributeType        string = "dynamodbat"
+	TagPrimaryKey           string = "dynamodbpk"
+	TagLocalSecondaryIndex  string = "dynamodblsi"
+	TagGlobalSecondaryIndex string = "dynamodbgsi"
 )
 
 type Table struct {
@@ -161,6 +165,92 @@ func (t *Table) keySchema() []*dynamodb.KeySchemaElement {
 	return keys
 }
 
+func (t *Table) localSecondaryIndexes() []*dynamodb.LocalSecondaryIndex {
+	var (
+		keys   []*dynamodb.LocalSecondaryIndex
+		keyMap map[string]*dynamodb.LocalSecondaryIndex = make(map[string]*dynamodb.LocalSecondaryIndex)
+		item   Itemer                                   = t.NewItem()
+		tp     reflect.Type                             = reflect.TypeOf(item.GetItem()).Elem()
+	)
+
+	for i := 0; i < tp.NumField(); i++ {
+		var (
+			attributeName, keyType     string
+			lsiName, lsiProjectionType string
+			// lsiReadCapacityUnits, lsiWriteCapacityUnits int
+		)
+
+		if tp.Field(i).Anonymous && tp.Field(i).Type.Kind() != reflect.Struct {
+			continue
+		}
+
+		if dynamodbavTagValue, ok := tp.Field(i).Tag.Lookup(TagAttributeValue); ok {
+			attributeName = strings.Split(dynamodbavTagValue, ",")[0]
+		} else {
+			continue
+		}
+
+		if dynamodblsiTagValue, ok := tp.Field(i).Tag.Lookup(TagLocalSecondaryIndex); ok {
+			var lsiType string
+
+			lsiName, lsiType, _, _, lsiProjectionType = parseLsiTag(dynamodblsiTagValue)
+			switch lsiType {
+			case KeyTypeHASH, KeyTypeRANGE, KeyProjectionTypeINCLUDE:
+				keyType = lsiType
+				break
+			default:
+				continue
+				break
+			}
+
+			// Make sure we have this index's key in the map
+			if _, ok := keyMap[lsiName]; !ok {
+				keyMap[lsiName] = &dynamodb.LocalSecondaryIndex{
+					IndexName: aws.String(lsiName),
+				}
+			}
+
+			// for HASH field only
+			switch lsiProjectionType {
+			case KeyProjectionTypeALL, KeyProjectionTypeINCLUDE, KeyProjectionTypeKEYSONLY:
+				keyMap[lsiName].Projection = &dynamodb.Projection{
+					ProjectionType: aws.String(lsiProjectionType),
+				}
+				break
+			}
+
+			// For INCLUDE fiels only
+			if keyType == KeyProjectionTypeINCLUDE {
+				if keyMap[lsiName].Projection == nil {
+					keyMap[lsiName].Projection = &dynamodb.Projection{
+						ProjectionType: aws.String(KeyProjectionTypeINCLUDE),
+					}
+				}
+
+				keyMap[lsiName].Projection.NonKeyAttributes = append(keyMap[lsiName].Projection.NonKeyAttributes, aws.String(attributeName))
+
+			} else {
+				keyMap[lsiName].KeySchema = append(keyMap[lsiName].KeySchema, &dynamodb.KeySchemaElement{
+					AttributeName: aws.String(attributeName),
+					KeyType:       aws.String(keyType),
+				})
+
+			}
+
+		} else {
+
+			continue
+		}
+
+	}
+
+	for _, v := range keyMap {
+		keys = append(keys, v)
+	}
+
+	return keys
+}
+
 // For table creation process
 // Generating dynamodb.AttributeDefinition slice which can be used later for table creation
 func (t *Table) attributeDefinitions() []*dynamodb.AttributeDefinition {
@@ -185,10 +275,23 @@ func getAttributeDefinitionMap(t reflect.Type) map[string]*dynamodb.AttributeDef
 	for i := 0; i < t.NumField(); i++ {
 		var (
 			attributeName, attributeType string
-			f                            reflect.StructField = t.Field(i)
+			skip                         bool = true
 		)
 
-		if _, ok := f.Tag.Lookup(TagPrimaryKey); !ok {
+		f := t.Field(i)
+		if _, ok := f.Tag.Lookup(TagPrimaryKey); ok {
+			skip = false
+		}
+
+		if tagValue, ok := f.Tag.Lookup(TagLocalSecondaryIndex); ok {
+			if _, indexType, _, _, _ := parseLsiTag(tagValue); indexType == KeyProjectionTypeINCLUDE {
+				skip = true
+			} else {
+				skip = false
+			}
+		}
+
+		if skip {
 			continue
 		}
 
@@ -282,6 +385,43 @@ func getFieldAttributeNameAndType(f reflect.StructField, adm map[string]*dynamod
 			attributeType = AttributeTypeS
 			break
 		}
+	}
+
+	return
+}
+
+// Examples
+// 	`dynamodblsi:"IdDateLsi,HASH,3,3,ALL"`
+//	`dynamodblsi:"IdDateLsi,RANGE"`
+//	`dynamodblsi:"IdDateLsi,INCLUDE"`
+func parseLsiTag(s string) (indexName, indexType string, indexRead, indexWrite int, indexProjectionType string) {
+	slice := strings.Split(s, ",")
+
+	if len(slice) >= 0 {
+		indexName = slice[0]
+	}
+
+	if len(slice) >= 1 {
+		switch slice[1] {
+		case KeyTypeHASH, KeyTypeRANGE, KeyProjectionTypeINCLUDE:
+			indexType = slice[1]
+		}
+	}
+
+	if len(slice) >= 4 {
+		v := slice[2]
+		if i, err := strconv.Atoi(v); err != nil {
+			indexRead = i
+		}
+
+		v = slice[3]
+		if i, err := strconv.Atoi(v); err != nil {
+			indexWrite = i
+		}
+	}
+
+	if len(slice) == 5 {
+		indexProjectionType = slice[5]
 	}
 
 	return

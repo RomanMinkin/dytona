@@ -217,6 +217,68 @@ func TestKeySchemaCustomHASHandRANGELowercase(t *testing.T) {
 	})
 }
 
+func TestLocalSecondaryIndexes(t *testing.T) {
+	type User struct {
+		Item  `json:"-" dynamodbav:"-"`
+		Id    string    `json:"id" dynamodbav:"id" dynamodbpk:"HASH" dynamodblsi:"IdDateLsi,HASH,3,3"`
+		Date  time.Time `json:"time" dynamodbav:"time" dynamodbpk:"RANGE"`
+		Count int       `json:"count" dynamodbav:"count" dynamodblsi:"IdDateLsi,RANGE"`
+		Name  string    `json:"name" dynamodbav:"name" dynamodblsi:"IdDateLsi,INCLUDE"`
+	}
+
+	tbl := NewTable("users", func() Itemer {
+		return &User{}
+	})
+
+	lsi := tbl.localSecondaryIndexes()
+	assert.Len(t, lsi, 1)
+	assert.Contains(t, lsi, &dynamodb.LocalSecondaryIndex{
+		IndexName: aws.String("IdDateLsi"),
+		KeySchema: []*dynamodb.KeySchemaElement{
+			&dynamodb.KeySchemaElement{
+				AttributeName: aws.String("id"),
+				KeyType:       aws.String(KeyTypeHASH),
+			},
+			&dynamodb.KeySchemaElement{
+				AttributeName: aws.String("count"),
+				KeyType:       aws.String(KeyTypeRANGE),
+			},
+		},
+		Projection: &dynamodb.Projection{
+			ProjectionType: aws.String(KeyProjectionTypeINCLUDE),
+			NonKeyAttributes: []*string{
+				aws.String("name"),
+			},
+		},
+	})
+
+	ks := tbl.Description().KeySchema
+	assert.Len(t, ks, 2)
+	assert.Contains(t, ks, &dynamodb.KeySchemaElement{
+		AttributeName: aws.String("id"),
+		KeyType:       aws.String("HASH"),
+	})
+	assert.Contains(t, ks, &dynamodb.KeySchemaElement{
+		AttributeName: aws.String("time"),
+		KeyType:       aws.String("RANGE"),
+	})
+
+	ad := tbl.Description().AttributeDefinitions
+	assert.Len(t, ad, 3)
+	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
+		AttributeName: aws.String("id"),
+		AttributeType: aws.String("S"),
+	})
+	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
+		AttributeName: aws.String("time"),
+		AttributeType: aws.String("S"),
+	})
+	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
+		AttributeName: aws.String("count"),
+		AttributeType: aws.String("N"),
+	})
+}
+
 func TestCreate(t *testing.T) {
 	type User struct {
 		Item   `json:"-" dynamodbav:"-"`
