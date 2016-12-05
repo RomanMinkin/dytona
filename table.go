@@ -24,6 +24,12 @@ const (
 
 	KeyTypeHASH  string = "HASH"
 	KeyTypeRANGE string = "RANGE"
+
+	TagAttributeValue         string = "dynamodbav"
+	TagAttributeType          string = "dynamodbat"
+	TagPrimaryKey             string = "dynamodbpk"
+	TagLocalSecondaryIndexes  string = "dynamodblsi"
+	TagGlobalSecondaryIndexes string = "dynamodbgsi"
 )
 
 type Table struct {
@@ -114,13 +120,13 @@ func (t *Table) keySchema() []*dynamodb.KeySchemaElement {
 			continue
 		}
 
-		if dynamodbavTagValue, ok := tp.Field(i).Tag.Lookup("dynamodbav"); ok {
+		if dynamodbavTagValue, ok := tp.Field(i).Tag.Lookup(TagAttributeValue); ok {
 			attributeName = strings.Split(dynamodbavTagValue, ",")[0]
 		} else {
 			continue
 		}
 
-		if dynamodbpkTagValue, ok := tp.Field(i).Tag.Lookup("dynamodbpk"); ok {
+		if dynamodbpkTagValue, ok := tp.Field(i).Tag.Lookup(TagPrimaryKey); ok {
 			dynamodbpkTagValue = strings.ToUpper(dynamodbpkTagValue)
 
 			switch dynamodbpkTagValue {
@@ -182,7 +188,7 @@ func getAttributeDefinitionMap(t reflect.Type) map[string]*dynamodb.AttributeDef
 			f                            reflect.StructField = t.Field(i)
 		)
 
-		if _, ok := f.Tag.Lookup("dynamodbpk"); !ok {
+		if _, ok := f.Tag.Lookup(TagPrimaryKey); !ok {
 			continue
 		}
 
@@ -217,13 +223,13 @@ func getFieldAttributeNameAndType(f reflect.StructField, adm map[string]*dynamod
 		return
 	}
 
-	if dynamodbavTagValue, ok := f.Tag.Lookup("dynamodbav"); ok {
+	if dynamodbavTagValue, ok := f.Tag.Lookup(TagAttributeValue); ok {
 		attributeName = strings.Split(dynamodbavTagValue, ",")[0]
 	} else {
 		return
 	}
 
-	if attributeTypeTagValue, ok := f.Tag.Lookup("dynamodbat"); ok {
+	if attributeTypeTagValue, ok := f.Tag.Lookup(TagAttributeType); ok {
 		switch attributeTypeTagValue {
 		case
 			AttributeTypeB,
