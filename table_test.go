@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/stretchr/testify/assert"
 )
@@ -54,84 +55,8 @@ func TestAttributeDefinitionsWithEmptyValues(t *testing.T) {
 		AttributeName: aws.String("id"),
 		AttributeType: aws.String("S"),
 	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("c_at"),
-		AttributeType: aws.String("S"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("u_at"),
-		AttributeType: aws.String("S"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("deleted"),
-		AttributeType: aws.String("BOOL"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("string"),
-		AttributeType: aws.String("S"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("int"),
-		AttributeType: aws.String("N"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("time"),
-		AttributeType: aws.String("S"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("slice_int"),
-		AttributeType: aws.String("L"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("slice_float"),
-		AttributeType: aws.String("L"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("slice_bool"),
-		AttributeType: aws.String("L"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("slice_string"),
-		AttributeType: aws.String("L"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("slice_time"),
-		AttributeType: aws.String("L"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("map_string_int"),
-		AttributeType: aws.String("M"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("map_string_float"),
-		AttributeType: aws.String("M"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("map_string_bool"),
-		AttributeType: aws.String("M"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("map_string_string"),
-		AttributeType: aws.String("M"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("map_string_time"),
-		AttributeType: aws.String("M"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("map_int_string"),
-		AttributeType: aws.String("M"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("map_bool_string"),
-		AttributeType: aws.String("M"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("map_float_string"),
-		AttributeType: aws.String("M"),
-	})
 
-	assert.Len(t, ad, 21, "AttributeDefinitions lenght does should match")
+	assert.Len(t, ad, 1)
 }
 
 func TestAttributeDefinitionsOverwrite(t *testing.T) {
@@ -144,24 +69,12 @@ func TestAttributeDefinitionsOverwrite(t *testing.T) {
 		return &User{}
 	})
 
-	ad := tbl.attributeDefinitions()
+	ad := tbl.Description().AttributeDefinitions
 	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
 		AttributeName: aws.String("_id"),
 		AttributeType: aws.String("N"),
 	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("c_at"),
-		AttributeType: aws.String("S"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("u_at"),
-		AttributeType: aws.String("S"),
-	})
-	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("deleted"),
-		AttributeType: aws.String("BOOL"),
-	})
-	assert.Len(t, ad, 4, "AttributeDefinitions lenght does should match")
+	assert.Len(t, ad, 1)
 
 	assert.NotContains(t, ad, &dynamodb.AttributeDefinition{
 		AttributeName: aws.String("id"),
@@ -169,25 +82,159 @@ func TestAttributeDefinitionsOverwrite(t *testing.T) {
 	})
 }
 
-func TestAttributeDefinitionsForCustomDynamodbat(t *testing.T) {
+func TestKeySchemaDefault(t *testing.T) {
 	type User struct {
-		Item        `json:"-" dynamodbav:"-"`
-		SliceInt    []int    `json:"slice_int" dynamodbav:"slice_int" dynamodbat:"NS"`
-		SliceString []string `json:"slice_string" dynamodbav:"slice_string" dynamodbat:"SS"`
+		Item `json:"-" dynamodbav:"-"`
 	}
 
 	tbl := NewTable("users", func() Itemer {
 		return &User{}
 	})
 
-	ad := tbl.attributeDefinitions()
+	ks := tbl.Description().KeySchema
+	assert.Len(t, ks, 1)
+	assert.Contains(t, ks, &dynamodb.KeySchemaElement{
+		AttributeName: aws.String("id"),
+		KeyType:       aws.String("HASH"),
+	})
+}
+
+func TestKeySchemaDefaultOverwrite(t *testing.T) {
+	type User struct {
+		Item `json:"-" dynamodbav:"-"`
+		Id   int `json:"_id" dynamodbav:"_id"`
+	}
+
+	tbl := NewTable("users", func() Itemer {
+		return &User{}
+	})
+
+	ks := tbl.Description().KeySchema
+	assert.Len(t, ks, 1)
+	assert.Contains(t, ks, &dynamodb.KeySchemaElement{
+		AttributeName: aws.String("_id"),
+		KeyType:       aws.String("HASH"),
+	})
+
+	ad := tbl.Description().AttributeDefinitions
+	assert.Len(t, ad, 1)
 	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("slice_int"),
-		AttributeType: aws.String("NS"),
+		AttributeName: aws.String("_id"),
+		AttributeType: aws.String("N"),
+	})
+}
+
+func TestKeySchemaCustomHASH(t *testing.T) {
+	type User struct {
+		Item `json:"-" dynamodbav:"-"`
+		UUID string `json:"uuid" dynamodbav:"uuid" dynamodbpk:"HASH"`
+	}
+
+	tbl := NewTable("users", func() Itemer {
+		return &User{}
+	})
+
+	ks := tbl.Description().KeySchema
+	assert.Len(t, ks, 1)
+	assert.Contains(t, ks, &dynamodb.KeySchemaElement{
+		AttributeName: aws.String("uuid"),
+		KeyType:       aws.String("HASH"),
+	})
+
+	ad := tbl.Description().AttributeDefinitions
+	assert.Len(t, ad, 1)
+	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
+		AttributeName: aws.String("uuid"),
+		AttributeType: aws.String("S"),
+	})
+}
+
+func TestKeySchemaCustomHASHandRANGE(t *testing.T) {
+	type User struct {
+		Item `json:"-" dynamodbav:"-"`
+		UUID string    `json:"uuid" dynamodbav:"uuid" dynamodbpk:"HASH"`
+		Date time.Time `json:"time" dynamodbav:"time" dynamodbpk:"RANGE"`
+	}
+
+	tbl := NewTable("users", func() Itemer {
+		return &User{}
+	})
+
+	ks := tbl.Description().KeySchema
+	assert.Len(t, ks, 2)
+	assert.Contains(t, ks, &dynamodb.KeySchemaElement{
+		AttributeName: aws.String("uuid"),
+		KeyType:       aws.String("HASH"),
+	})
+	assert.Contains(t, ks, &dynamodb.KeySchemaElement{
+		AttributeName: aws.String("time"),
+		KeyType:       aws.String("RANGE"),
+	})
+
+	ad := tbl.Description().AttributeDefinitions
+	assert.Len(t, ad, 2)
+	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
+		AttributeName: aws.String("uuid"),
+		AttributeType: aws.String("S"),
 	})
 	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
-		AttributeName: aws.String("slice_string"),
-		AttributeType: aws.String("SS"),
+		AttributeName: aws.String("time"),
+		AttributeType: aws.String("S"),
 	})
-	assert.Len(t, ad, 6, "AttributeDefinitions lenght does should match")
+}
+
+func TestKeySchemaCustomHASHandRANGELowercase(t *testing.T) {
+	type User struct {
+		Item `json:"-" dynamodbav:"-"`
+		UUID string    `json:"uuid" dynamodbav:"uuid" dynamodbpk:"hash"`
+		Date time.Time `json:"time" dynamodbav:"time" dynamodbpk:"range"`
+	}
+
+	tbl := NewTable("users", func() Itemer {
+		return &User{}
+	})
+
+	ks := tbl.Description().KeySchema
+	assert.Len(t, ks, 2)
+	assert.Contains(t, ks, &dynamodb.KeySchemaElement{
+		AttributeName: aws.String("uuid"),
+		KeyType:       aws.String("HASH"),
+	})
+	assert.Contains(t, ks, &dynamodb.KeySchemaElement{
+		AttributeName: aws.String("time"),
+		KeyType:       aws.String("RANGE"),
+	})
+
+	ad := tbl.Description().AttributeDefinitions
+	assert.Len(t, ad, 2)
+	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
+		AttributeName: aws.String("uuid"),
+		AttributeType: aws.String("S"),
+	})
+	assert.Contains(t, ad, &dynamodb.AttributeDefinition{
+		AttributeName: aws.String("time"),
+		AttributeType: aws.String("S"),
+	})
+}
+
+func TestCreate(t *testing.T) {
+	type User struct {
+		Item   `json:"-" dynamodbav:"-"`
+		String string `json:"string" dynamodbav:"string"`
+	}
+
+	d := NewDytona("key", "secret", "http://localhost:8000", "us-east-1")
+	d.Dial(NewConfig().WithMaxRetries(0))
+
+	tbl := NewTable("users", func() Itemer {
+		return &User{String: "Bob"}
+	}).WithSession(d.session)
+
+	if err := tbl.Create(); err != nil {
+		assert.Nil(t, err, err.(awserr.Error).Error())
+	}
+
+	if err := tbl.Delete(); err != nil {
+		assert.Nil(t, err, err.(awserr.Error).Error())
+	}
 }
